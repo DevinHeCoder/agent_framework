@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>轻量智能 Agent 工具编排框架 · 从零开发设计方案</title>
+<style>
+  :root{
+    --text:#1A1B1C; --secondary:#6B7280; --bg:#F4F3EE; --card:#FFFFFF;
+    --border:#E4E3DD; --accent:#7FB6CC; --accent-soft:rgba(163,213,232,0.16);
+    --green:#52C41A; --amber:#FAAD14; --red:#EA6668;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;padding:32px 20px;background:var(--bg);color:var(--text);
+       font-family:'Roboto','PingFang SC','Segoe UI','Microsoft YaHei',Arial,sans-serif;line-height:1.6;}
+  .wrap{max-width:1000px;margin:0 auto;}
+  h1{font-size:24px;margin:0 0 4px;font-weight:700;}
+  h2{font-size:19px;margin:34px 0 12px;font-weight:600;padding-left:10px;border-left:4px solid var(--accent);}
+  h3{font-size:15px;margin:18px 0 8px;font-weight:600;}
+  .sub{font-size:13px;color:var(--secondary);margin:0 0 8px;}
+  .badge{display:inline-block;font-size:11px;font-weight:600;color:#fff;
+         background:var(--accent);border-radius:6px;padding:1px 8px;margin-right:6px;}
+  .card{background:var(--card);border:1px solid rgba(0,0,0,0.08);border-radius:14px;padding:16px 18px;margin:12px 0;}
+  table{width:100%;border-collapse:collapse;font-size:13px;background:var(--card);
+        border:1px solid rgba(0,0,0,0.08);border-radius:12px;overflow:hidden;}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--border);vertical-align:top;}
+  th{background:var(--accent-soft);font-weight:600;font-size:12.5px;}
+  tr:last-child td{border-bottom:none;}
+  code{background:rgba(0,0,0,0.05);border-radius:4px;padding:1px 5px;font-size:12px;
+       font-family:Consolas,Menlo,monospace;}
+  .note{background:var(--accent-soft);border-radius:10px;padding:10px 14px;font-size:13px;margin:10px 0;}
+  .kv{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0;}
+  .kv span{font-size:12px;background:var(--accent-soft);border:1px solid rgba(0,0,0,0.06);
+           border-radius:8px;padding:4px 10px;}
+  .phase{border-left:3px solid var(--accent);padding:2px 0 2px 14px;margin:16px 0;}
+  .phase .t{font-size:15px;font-weight:600;}
+  .phase .d{font-size:13px;color:var(--secondary);}
+  ul,ol{margin:6px 0;padding-left:22px;font-size:13.5px;}
+  li{margin:3px 0;}
+  pre{background:#fff;border:1px solid rgba(0,0,0,0.08);border-radius:10px;padding:12px 14px;
+      font-size:12px;overflow-x:auto;line-height:1.5;font-family:Consolas,Menlo,monospace;}
+  footer{margin-top:36px;font-size:12px;color:var(--secondary);text-align:center;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>轻量智能 Agent 工具编排框架</h1>
+<p class="sub">从零开发设计方案 · 统一工程形式（分层 + 三件套 + 可插拔 + YAML 选型）· 2026-09-04</p>
+
+<div class="note"><b>设计前提</b>：现有项目文件一律视为<u>示例 / 占位</u>，全部重新设计开发。采用统一的工程形式：分层流水线（P0→P6）、每层「抽象基类 + 注册表 + @register 实现」三件套、config/settings.yaml 的选型字段、环境变量深路径覆盖、统一异常基类、tests 与模块一一对应。</div>
+
+<h2>一、设计总则（统一工程形式）</h2>
+<table>
+  <tr><th>统一工程形式</th><th>本项目落地</th></tr>
+  <tr><td>分层流水线（P0 公共 → P5 API → P6 部署）</td><td>P0 公共 → P1 工具 → P2 记忆 → P3 LLM → P4 Agent/规划 → P5 会话/API → P6 部署</td></tr>
+  <tr><td>每层三件套：<code>base.py</code>（抽象基类+数据类）+ <code>registry.py</code>（Registry 实例）+ 实现类（<code>@registry.register("name")</code>）</td><td>tool / memory / llm_client / planner 四层全部采用三件套</td></tr>
+  <tr><td>通用泛型 <code>Registry[T]</code>（src/common/registry.py）</td><td>复用同一份 Registry，注册/查询/创建/类型校验/默认实现</td></tr>
+  <tr><td>异常体系：<code>XxxEngineError</code> 基类 + 各层子异常</td><td><code>AgentFrameworkError</code> + ToolError / MemoryError / LLMError / PlannerError / AgentError / SessionError / ConfigError / RegistryError</td></tr>
+  <tr><td>配置：settings.yaml + logging.yaml；${ENV} 注入；<code>AGENT_</code> 前缀环境变量覆盖</td><td><code>AGENT_</code> 前缀 + 双下划线分层覆盖（如 <code>AGENT_LLM__MODEL</code>）</td></tr>
+  <tr><td>每层 <code>__init__.py</code> 提供 <code>build_xxx()</code> 工厂 + 导入实现触发注册</td><td><code>build_tool_registry() / build_memory() / build_llm_client() / build_planner()</code></td></tr>
+  <tr><td>API 层：main（create_app 工厂）+ dependencies + schemas + service + routes/</td><td>完全一致，routes 拆 chat / tools / system</td></tr>
+  <tr><td>tests 与模块一一对应，examples 可运行，Docker 多阶段 + 非 root + healthcheck</td><td>完全一致</td></tr>
+</table>
+
+<h2>二、目标目录结构（从零新建）</h2>
+<pre>
+agent_framework/
+├── src/
+│   ├── common/              # P0 公共层
+│   │   ├── constants.py     #   PROJECT_ROOT / DEFAULT_CONFIG_PATH / ENV_PREFIX=AGENT_
+│   │   ├── exceptions.py    #   AgentFrameworkError + 各层子异常
+│   │   └── registry.py      #   泛型可插拔注册表 Registry[T]
+│   ├── utils/               # P0 公共层
+│   │   ├── config_loader.py #   YAML + ${ENV} + AGENT_ 前缀环境变量覆盖
+│   │   ├── logger.py        #   setup_logging / get_logger
+│   │   └── json_parser.py   #   LLM 输出 JSON 容错清洗（去 ```json 标记等）
+│   ├── tool/                # P1 工具层（可插拔注册中心 + 参数校验）
+│   │   ├── base.py          #   BaseTool + ToolResult + ToolSchema(JSON Schema)
+│   │   ├── registry.py      #   tool_registry = Registry("tool", base_type=BaseTool)
+│   │   ├── validator.py     #   执行前参数校验（JSON Schema / pydantic）
+│   │   ├── implementations/
+│   │   │   ├── calc_tool.py #   @register("calc") 安全计算器（ast 白名单）
+│   │   │   ├── time_tool.py #   @register("time") 当前日期/时间
+│   │   │   ├── weather_tool.py # @register("weather") 天气（可 mock）
+│   │   │   └── kb_search_tool.py # @register("kb_search") 检索
+│   │   └── __init__.py      #   build_tool_registry() 工厂
+│   ├── memory/              # P2 记忆层（短时 + 长时双缓存）
+│   │   ├── base.py          #   BaseMemory + Message
+│   │   ├── registry.py      #   memory_registry
+│   │   ├── in_memory_memory.py # @register("in_memory") 短时滑动窗口
+│   │   ├── redis_memory.py  #   @register("redis") 长时持久化 + TTL
+│   │   └── __init__.py      #   build_memory() / 双缓存组合
+│   ├── llm_client/          # P3 LLM 客户端层
+│   │   ├── base.py          #   BaseLLMClient（chat / generate_json）
+│   │   ├── registry.py      #   llm_client_registry
+│   │   ├── openai_client.py #   @register("openai_compatible")
+│   │   ├── fake_client.py   #   @register("fake") 测试/演示
+│   │   └── __init__.py      #   build_llm_client()
+│   ├── planner/             # P4 规划层（任务拆解 / 多步规划）
+│   │   ├── base.py          #   BasePlanner + PlanStep
+│   │   ├── registry.py      #   planner_registry
+│   │   ├── llm_planner.py   #   @register("llm") LLM 拆解任务
+│   │   └── __init__.py      #   build_planner()
+│   ├── agent/               # P4 Agent 核心层
+│   │   ├── base.py          #   BaseAgent + AgentOutput
+│   │   ├── registry.py      #   agent_registry
+│   │   ├── react_agent.py   #   @register("react") ReAct 循环
+│   │   ├── policy.py        #   重试 / 参数自动修正 / 失败兜底策略
+│   │   └── __init__.py      #   build_agent()
+│   ├── session/             # P5 会话层（会话状态持久化）
+│   │   ├── manager.py       #   SessionManager（create/load/clear）
+│   │   └── __init__.py
+│   └── api/                 # P5 API 层
+│       ├── main.py          #   create_app() 工厂 + app
+│       ├── dependencies.py  #   get_service 依赖注入
+│       ├── schemas.py       #   Pydantic 请求/响应
+│       ├── service.py       #   AgentService（纯业务，懒加载组件）
+│       └── routes/
+│           ├── chat.py      #   POST /api/chat
+│           ├── tools.py     #   GET /api/tools
+│           ├── system.py    #   GET /api/health
+│           └── __init__.py  #   api_router 聚合
+├── config/
+│   ├── settings.yaml        # app / logging / tool / memory / llm / planner / agent / server
+│   └── logging.yaml
+├── examples/
+│   └── run_agent_demo.py    # CLI 交互式 demo
+├── tests/                   # test_registry / test_config / test_logger / test_tool
+│                            # / test_memory / test_llm_client / test_planner
+│                            # / test_agent / test_session / test_api
+├── docs/architecture.svg
+├── requirements.txt
+├── Dockerfile
+└── docker-compose.yml
+</pre>
+
+<h2>三、开发步骤（Phase 0 → 6）</h2>
+
+<div class="phase">
+  <div class="t"><span class="badge">Phase 0</span>P0 公共基础设施（约 0.5–1 天）</div>
+  <p class="d">目标：搭建统一可插拔的地基，后续所有层依赖它。</p>
+  <ul>
+    <li><code>src/common/constants.py</code>：PROJECT_ROOT / DEFAULT_CONFIG_PATH / ENV_PREFIX="AGENT_" / APP_NAME</li>
+    <li><code>src/common/exceptions.py</code>：AgentFrameworkError + ConfigError / RegistryError / ToolError / MemoryError / LLMError / PlannerError / AgentError / SessionError</li>
+    <li><code>src/common/registry.py</code>：自研泛型 Registry[T]（register / has / names / get / create / set_default / 类型校验 / 重复注册拦截）</li>
+    <li><code>src/utils/config_loader.py</code>：YAML → ${ENV} 展开 → AGENT_ 前缀深路径覆盖</li>
+    <li><code>src/utils/logger.py</code>：setup_logging + get_logger（dictConfig 加载 logging.yaml）</li>
+    <li><code>src/utils/json_parser.py</code>：LLM 输出 JSON 容错清洗</li>
+    <li><code>config/settings.yaml</code> + <code>config/logging.yaml</code></li>
+  </ul>
+  <p class="d">验证：test_registry / test_config / test_logger / test_exceptions 全绿。</p>
+</div>
+
+<div class="phase">
+  <div class="t"><span class="badge">Phase 1</span>P1 工具层：可插拔注册中心 + 参数校验（约 1–1.5 天）</div>
+  <p class="d">目标：落地需求①「通用工具注册中心（天气/检索/计算器/时间可插拔注册）」。</p>
+  <ul>
+    <li><code>tool/base.py</code>：BaseTool 抽象 + ToolResult 数据类 + ToolSchema（JSON Schema 形态）</li>
+    <li><code>tool/registry.py</code>：tool_registry = Registry("tool", base_type=BaseTool)</li>
+    <li><code>tool/validator.py</code>：执行前按 JSON Schema 参数校验，失败抛 ToolError（供 Agent 自愈）</li>
+    <li>四个实现：<code>calc_tool</code>（ast 白名单安全计算）、<code>time_tool</code>、<code>weather_tool</code>、<code>kb_search_tool</code>（先 mock 后可接真实 API）</li>
+    <li><code>tool/__init__.py</code>：导入实现触发注册 + build_tool_registry() 工厂 + 统一 run 入口（含校验）</li>
+  </ul>
+  <p class="d">验证：test_tool 覆盖注册 / 参数校验 / 执行 / 未注册报错。</p>
+</div>
+
+<div class="phase">
+  <div class="t"><span class="badge">Phase 2</span>P2 记忆层：短时 + 长时双缓存（约 1 天）</div>
+  <p class="d">目标：落地需求③「短时 + 长时双缓存记忆机制」。</p>
+  <ul>
+    <li><code>memory/base.py</code>：BaseMemory 抽象 + Message</li>
+    <li><code>memory/registry.py</code>：memory_registry</li>
+    <li><code>in_memory_memory.py</code>：@register("in_memory") 进程内 dict + 滑动窗口（保留最近 N 条）</li>
+    <li><code>redis_memory.py</code>：@register("redis") 每会话 key + JSON 序列化 + TTL</li>
+    <li><code>memory/__init__.py</code>：build_memory() 按配置选型；双缓存组合（短时快速读写 + 长时兜底恢复的冷热分层）</li>
+  </ul>
+  <p class="d">验证：test_memory 覆盖写入/读取/滑动窗口/清空/双缓存恢复。</p>
+</div>
+
+<div class="phase">
+  <div class="t"><span class="badge">Phase 3</span>P3 LLM 客户端层（约 0.5–1 天）</div>
+  <p class="d">目标：为 Agent / 规划器提供统一 LLM 入口。</p>
+  <ul>
+    <li><code>llm_client/base.py</code>：BaseLLMClient（chat 返回文本 + generate_json 返回结构化 JSON）</li>
+    <li><code>llm_client/registry.py</code>：llm_client_registry</li>
+    <li><code>openai_client.py</code>：@register("openai_compatible")，base_url 可配 → 兼容豆包 / DeepSeek / OpenAI</li>
+    <li><code>fake_client.py</code>：@register("fake")，可预设响应序列，驱动循环测试与无 key 演示</li>
+    <li><code>llm_client/__init__.py</code>：build_llm_client() 工厂</li>
+  </ul>
+  <p class="d">验证：test_llm_client（fake 返回序列 / openai 用 mock 拦截）。</p>
+</div>
+
+<div class="phase">
+  <div class="t"><span class="badge">Phase 4</span>P4 Agent 核心：规划 + ReAct + 容错策略（约 1.5–2 天）</div>
+  <p class="d">目标：落地需求②「LLM 自动任务拆解 / 多步规划 / 自动选择工具」与⑤「异常重试 / 参数自动修正 / 失败兜底」。</p>
+  <ul>
+    <li><code>planner/base.py</code>：BasePlanner + PlanStep（task / depends / tool_hint）</li>
+    <li><code>planner/llm_planner.py</code>：@register("llm")，让 LLM 把用户请求拆解为多步计划</li>
+    <li><code>agent/base.py</code>：BaseAgent + AgentOutput（success / content / steps / tool_calls）</li>
+    <li><code>agent/react_agent.py</code>：@register("react") ReAct 循环——思考→选工具→执行→回填，直到 finish；含 max_loop 保护</li>
+    <li><code>agent/policy.py</code>：容错策略——瞬时失败退避重试；参数校验失败回喂 LLM 重新生成（限次）；工具不存在/执行异常引导换工具或兜底答案</li>
+    <li><code>agent/__init__.py</code>：build_agent() 工厂</li>
+  </ul>
+  <p class="d">验证：test_planner / test_agent——多步任务端到端跑通 + 注入错参数/假工具名可自愈或优雅降级。</p>
+</div>
+
+<div class="phase">
+  <div class="t"><span class="badge">Phase 5</span>P5 会话层 + API 层（约 1 天）</div>
+  <p class="d">目标：落地需求④「会话状态持久化，支持多轮连续任务」并对外服务化。</p>
+  <ul>
+    <li><code>session/manager.py</code>：SessionManager（create / load / clear，会话数据落 memory 持久化）</li>
+    <li><code>api/schemas.py</code>：ChatRequest（session_id / query）/ ChatResponse（answer / steps / tool_calls）/ ToolsResponse / HealthResponse</li>
+    <li><code>api/service.py</code>：AgentService——懒加载 registry / memory / llm / planner / agent，多轮会话编排</li>
+    <li><code>api/main.py</code> + <code>dependencies.py</code> + <code>routes/</code>（chat / tools / system）</li>
+  </ul>
+  <p class="d">验证：test_session / test_api——HTTP 多轮连续对话返回正确，重启后会话可恢复。</p>
+</div>
+
+<div class="phase">
+  <div class="t"><span class="badge">Phase 6</span>P6 示例 + 部署 + 文档（约 0.5–1 天）</div>
+  <p class="d">目标：可交付、可演示、可扩展。</p>
+  <ul>
+    <li><code>examples/run_agent_demo.py</code>：CLI 交互式多轮 demo</li>
+    <li><code>Dockerfile</code>（多阶段构建 + 非 root + healthcheck）+ <code>docker-compose.yml</code>（app + redis）</li>
+    <li><code>docs/architecture.svg</code> + README 重写（架构 / 快速开始 / API / 可插拔扩展指南 / 测试）</li>
+    <li>可插拔演示：新增一个工具一行 @register 即生效</li>
+  </ul>
+  <p class="d">验证：docker compose up 一键起服务；README 按步骤可复现。</p>
+</div>
+
+<h2>四、核心功能 → 设计落地映射</h2>
+<table>
+  <tr><th>需求点</th><th>落地层 / Phase</th><th>关键设计</th></tr>
+  <tr><td>① 通用工具注册中心（天气/检索/计算器/时间）</td><td>P1 / Phase 1</td><td>tool 层三件套 + JSON Schema 参数校验 + @register 可插拔</td></tr>
+  <tr><td>② LLM 拆解 / 多步规划 / 自动选工具</td><td>P3 + P4 / Phase 3–4</td><td>planner（llm_planner 拆解）+ react_agent（循环选工具）</td></tr>
+  <tr><td>③ 短时 + 长时双缓存记忆</td><td>P2 / Phase 2</td><td>in_memory（短时）+ redis（长时）冷热分层 + 滑动窗口</td></tr>
+  <tr><td>④ 会话状态持久化多轮</td><td>P2 + P5 / Phase 2 + 5</td><td>redis_memory 持久化 + SessionManager + API 会话接口</td></tr>
+  <tr><td>⑤ 重试 / 参数修正 / 兜底</td><td>P4 / Phase 4</td><td>policy.py 容错策略（退避重试 + 自愈 + 降级）</td></tr>
+</table>
+
+<h2>五、关键设计决策（答辩加分点）</h2>
+<ul>
+  <li><b>可插拔是灵魂</b>：四层（tool/memory/llm_client/planner）统一 Registry，新增实现只写类 + 一行装饰器，上层零改动。</li>
+  <li><b>安全计算器</b>：禁用 eval，用 <code>ast.parse</code> 白名单校验表达式。</li>
+  <li><b>双缓存冷热分层</b>：短时（进程内/秒级）+ 长时（Redis/跨重启），体现「有状态、有记忆」。</li>
+  <li><b>参数校验前置 + 自愈</b>：执行前 JSON Schema 校验，校验失败把结构化错误回喂 LLM 重新生成参数（限次）。</li>
+  <li><b>容错策略独立成模块</b>：policy.py 把重试/修正/兜底从 Agent 主循环解耦，可插拔、可单测。</li>
+  <li><b>FakeLLM 贯穿开发</b>：无 API key 也能驱动全链路测试与演示，CI 友好。</li>
+  <li><b>配置驱动选型</b>：settings.yaml 的 name 字段 + <code>AGENT_</code> 环境变量覆盖，容器化/多环境零改动。</li>
+</ul>
+
+<h2>六、前置依赖</h2>
+<table>
+  <tr><th>依赖</th><th>说明</th></tr>
+  <tr><td>Python 3.10+</td><td>FastAPI / Pydantic 2</td></tr>
+  <tr><td>Redis</td><td>Phase 2 起；docker compose 起 redis 或本地 redis-server</td></tr>
+  <tr><td>LLM API Key</td><td>豆包 / DeepSeek / OpenAI 任一；无 key 用 fake_client 先行</td></tr>
+  <tr><td>requirements.txt</td><td>fastapi / uvicorn / pydantic / redis / pyyaml / python-dotenv / openai / jsonschema</td></tr>
+</table>
+
+<footer>本方案从零设计，采用「分层 + 三件套 + 可插拔 + YAML 选型」统一工程形式；现有文件内容仅作示例，不构成前置依赖。</footer>
+
+</div>
+</body>
+</html>

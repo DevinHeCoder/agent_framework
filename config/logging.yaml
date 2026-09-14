@@ -1,0 +1,34 @@
+# ==================== Agent Framework 日志配置 ====================
+# 由 src/utils/logger.py 的 setup_logging() 通过 dictConfig 加载
+version: 1
+disable_existing_loggers: false
+
+formatters:
+  standard:
+    format: "%(asctime)s | %(levelname)-7s | %(name)s | %(message)s"
+    datefmt: "%Y-%m-%d %H:%M:%S"
+
+handlers:
+  console:
+    class: logging.StreamHandler
+    level: DEBUG
+    formatter: standard
+    stream: ext://sys.stdout
+  file:
+    class: logging.handlers.RotatingFileHandler
+    level: INFO
+    formatter: standard
+    filename: logs/agent_framework.log
+    maxBytes: 5242880     # 单文件 5MB
+    backupCount: 3        # 保留 3 个滚动备份
+    encoding: utf-8
+
+root:
+  level: INFO
+  handlers: [console, file]
+
+loggers:
+  agent_framework:
+    level: DEBUG
+    handlers: [console, file]
+    propagate: false
