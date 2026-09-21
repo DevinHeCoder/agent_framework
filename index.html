@@ -577,8 +577,24 @@
   }
 
   /* ===== 初始化：系统信息 / 工具 / 会话 ===== */
+  var DEMO_SYS = {
+    app: 'agent_framework',
+    version: 'demo',
+    llm_provider: 'fake',
+    memory_provider: 'demo',
+    planner_provider: 'demo',
+    agent_provider: 'react',
+    enabled_tools: ['calc', 'kb_search', 'time', 'weather'],
+    active_sessions: 0,
+    auth_required: false,
+    branding: null
+  };
+
   function init() {
-    fetch('/api/v1/system').then(function (r) { return r.json(); }).then(function (d) {
+    var sysReq = state.demo
+      ? Promise.resolve(DEMO_SYS)
+      : fetch('/api/v1/system').then(function (r) { return r.json(); });
+    sysReq.then(function (d) {
       state.info = d;
       $('bd-conn').className = 'badge online';
       $('bd-conn').innerHTML = '<b>●</b> ONLINE';
@@ -610,7 +626,10 @@
         $('bd-conn').innerHTML = '<b>●</b> 演示模式';
         return;
       }
-      $('bd-conn').innerHTML = '<b>●</b> 连接失败（服务未启动？）';
+      // 后端不可用（如 GitHub Pages 静态托管）→ 自动降级为演示模式
+      state.demo = true;
+      $('bd-conn').innerHTML = '<b>●</b> 演示模式（后端未连接，已自动进入）';
+      init();
     });
 
     if (state.demo) {
