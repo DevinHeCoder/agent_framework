@@ -99,6 +99,14 @@ agent_framework/
 └── docker-compose.yml    # app + redis 一键编排
 ```
 
+## 在线演示
+
+无需安装、无需令牌即可在线体验完整功能（纯前端演示模式，不调用任何模型 API、不消耗任何额度）：
+
+[**▶ 打开在线演示**](https://devinhecoder.github.io/agent_framework/) · GitHub Pages 托管
+
+支持：多步任务拆解演示、天气 / 计算 / 时间 / 知识库检索、执行轨迹回放、双缓存记忆与会话管理展示。
+
 ## 快速开始
 
 > 完整分步教程见 [docs/QUICKSTART.md](docs/QUICKSTART.md)（5 分钟跑通）。
