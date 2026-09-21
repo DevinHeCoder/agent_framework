@@ -23,6 +23,7 @@ class FakeLLMClient(LLMClient):
         default_reply: str = "【fake】已收到你的消息。",
         responder: Optional[Responder] = None,
     ) -> None:
+        super().__init__()
         self._responses = list(responses or [])
         self.default_reply = default_reply
         self.responder = responder
@@ -31,10 +32,16 @@ class FakeLLMClient(LLMClient):
     def chat(self, messages: List[ChatMessage], **kwargs) -> str:
         self.calls.append((list(messages), dict(kwargs)))
         if self.responder is not None:
-            return self.responder(messages, kwargs)
-        if self._responses:
-            return self._responses.pop(0)
-        return self.default_reply
+            content = self.responder(messages, kwargs)
+        elif self._responses:
+            content = self._responses.pop(0)
+        else:
+            content = self.default_reply
+        # 用量统计：fake 按字符数粗估 token（演示/测试也可看到趋势）
+        self._report_usage(self.model if hasattr(self, "model") else "fake",
+                           sum(len(m.content) for m in messages) // 2,
+                           len(content) // 2)
+        return content
 
     def close(self) -> None:
         self.calls.clear()

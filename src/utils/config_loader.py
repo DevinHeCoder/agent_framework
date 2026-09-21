@@ -23,7 +23,7 @@ from typing import Any, Dict, Optional, Union
 
 import yaml
 
-from src.common.constants import DEFAULT_CONFIG_PATH, ENV_PREFIX
+from src.common.constants import DEFAULT_CONFIG_PATH, ENV_PREFIX, PROJECT_ROOT
 from src.common.exceptions import ConfigError
 
 # ${VAR} 或 ${VAR:default}
@@ -101,13 +101,63 @@ def load_config(
     path: Optional[PathLike] = None,
     *,
     env_prefix: str = ENV_PREFIX,
+    dotenv_path: Optional[PathLike] = None,
 ) -> Dict[str, Any]:
-    """加载配置：YAML → ${ENV} 占位符展开 → 环境变量路径覆盖。"""
+    """加载配置：.env → YAML → ${ENV} 占位符展开 → 环境变量路径覆盖。
+
+    - 自动读取项目根目录 ``.env``（可用 ``dotenv_path`` 指定其他位置）；
+      已存在的环境变量优先，``.env`` 不覆盖它们。
+    - ``path`` 指定 YAML 文件，默认 ``config/settings.yaml``。
+    """
+    load_dotenv(dotenv_path)
     p = Path(path) if path else DEFAULT_CONFIG_PATH
     cfg = load_yaml(p)
     cfg = expand_env(cfg)
     cfg = _apply_env_overrides(cfg, env_prefix)
     return cfg
+
+
+def load_dotenv(path: Optional[PathLike] = None) -> None:
+    """轻量 .env 加载（零第三方依赖）。
+
+    规则：
+        - 默认读取项目根目录 ``.env``；文件不存在时静默跳过。
+        - 仅处理 ``KEY=VALUE`` 行，忽略空行与 ``#`` 注释。
+        - 值支持单引号 / 双引号包裹（自动去除）；不做变量展开。
+        - 已存在的环境变量优先，.env 不覆盖（幂等，可安全重复调用）。
+
+    示例::
+
+        AGENT_LLM_MODEL=qwen3-max
+        AGENT_LLM_API_KEY="sk-xxx"
+    """
+    p = Path(path) if path else PROJECT_ROOT / ".env"
+    if not p.is_file():
+        return
+    raw: str = ""
+    try:
+        raw = p.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        # Windows 上用户可能以 GBK/ANSI 保存，做一次回退
+        try:
+            raw = p.read_text(encoding="gbk")
+        except (UnicodeDecodeError, OSError):
+            return
+    except OSError:
+        return
+    for line in raw.splitlines():
+        s = line.strip()
+        if not s or s.startswith("#") or "=" not in s:
+            continue
+        key, _, val = s.partition("=")
+        key = key.strip()
+        val = val.strip()
+        if not key or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
+            continue
+        if len(val) >= 2 and val[0] in "\"'" and val[-1] == val[0]:
+            val = val[1:-1]
+        if key not in os.environ:
+            os.environ[key] = val
 
 
 # ---------------- 内部实现 ----------------

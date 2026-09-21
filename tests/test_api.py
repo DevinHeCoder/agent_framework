@@ -24,7 +24,22 @@ def make_responder(answer="结果是 16"):
 
 
 @pytest.fixture()
-def client():
+def client(monkeypatch):
+    # 隔离外部 .env：显式置 fake（load_dotenv 不会覆盖已存在的环境变量）
+    monkeypatch.setenv("AGENT_LLM_PROVIDER", "fake")
+    cfg = load_config()
+    llm = FakeLLMClient(responder=make_responder())
+    service = AgentService.build_from_config(cfg, llm=llm)
+    app = create_app(config=cfg, service=service)
+    return TestClient(app)
+
+
+@pytest.fixture()
+def auth_client(monkeypatch):
+    """开启鉴权的客户端：token=test-secret，限流 60/min。"""
+    monkeypatch.setenv("AGENT_LLM_PROVIDER", "fake")
+    monkeypatch.setenv("AGENT_AUTH_ENABLED", "true")
+    monkeypatch.setenv("AGENT_AUTH_TOKEN", "test-secret")
     cfg = load_config()
     llm = FakeLLMClient(responder=make_responder())
     service = AgentService.build_from_config(cfg, llm=llm)
@@ -82,7 +97,7 @@ def test_health_endpoint(client):
 
 
 def test_root_info_endpoint(client):
-    resp = client.get("/")
+    resp = client.get("/api/v1/system")
     assert resp.status_code == 200
     body = resp.json()
     assert body["llm_provider"] == "fake"
@@ -101,3 +116,132 @@ def test_sessions_list_and_delete(client):
     assert resp.json() == {"deleted": True}
     sessions = client.get("/api/v1/sessions").json()
     assert not any(s["session_id"] == sid for s in sessions)
+
+
+# ---------------- session messages ----------------
+def test_session_messages_after_chat(client):
+    sid = client.post("/api/v1/chat", json={"query": "帮我算 (3+5)*2"}).json()["session_id"]
+    resp = client.get(f"/api/v1/sessions/{sid}/messages")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["session_id"] == sid
+    roles = [m["role"] for m in body["messages"]]
+    assert roles == ["user", "assistant"]
+    assert body["messages"][0]["content"] == "帮我算 (3+5)*2"
+    assert "16" in body["messages"][1]["content"]
+
+
+def test_session_messages_multi_turn(client):
+    sid = client.post("/api/v1/chat", json={"query": "第一问"}).json()["session_id"]
+    client.post("/api/v1/chat", json={"query": "第二问", "session_id": sid})
+    body = client.get(f"/api/v1/sessions/{sid}/messages").json()
+    assert [m["role"] for m in body["messages"]] == [
+        "user", "assistant", "user", "assistant"
+    ]
+    assert body["messages"][2]["content"] == "第二问"
+
+
+def test_session_messages_empty_for_unknown(client):
+    resp = client.get("/api/v1/sessions/sess_unknown/messages")
+    assert resp.status_code == 200
+    assert resp.json()["messages"] == []
+
+
+# ---------------- api auth ----------------
+def test_auth_disabled_public_endpoints(client):
+    """鉴权关闭（默认）：health/system 无需 Key。"""
+    assert client.get("/health").status_code == 200
+    assert client.get("/api/v1/system").status_code == 200
+    assert client.get("/api/v1/system").json()["auth_required"] is False
+
+
+def test_system_branding_defaults(client):
+    """白标默认值：system 返回品牌信息。"""
+    b = client.get("/api/v1/system").json()["branding"]
+    assert b["logo_text"] == "AGENT"
+    assert b["primary_color"] == "#4F8CFF"
+    assert b["agent_label"] == "AGENT"
+
+
+def test_system_branding_env_override(monkeypatch):
+    """白标可被 .env 覆盖：AGENT_BRAND_* 注入后 system 返回新品牌。"""
+    monkeypatch.setenv("AGENT_LLM_PROVIDER", "fake")
+    monkeypatch.setenv("AGENT_BRAND_LOGO_TEXT", "Nova")
+    monkeypatch.setenv("AGENT_BRAND_APP_NAME", "Nova 智能体平台")
+    monkeypatch.setenv("AGENT_BRAND_PRIMARY_COLOR", "#10B981")
+    monkeypatch.setenv("AGENT_BRAND_AGENT_LABEL", "NOVA")
+    cfg = load_config()
+    service = AgentService.build_from_config(cfg, llm=FakeLLMClient(responder=make_responder()))
+    app = create_app(config=cfg, service=service)
+    c = TestClient(app)
+    b = c.get("/api/v1/system").json()["branding"]
+    assert b["logo_text"] == "Nova"
+    assert b["app_name"] == "Nova 智能体平台"
+    assert b["primary_color"] == "#10B981"
+    assert b["agent_label"] == "NOVA"
+
+
+def test_auth_disabled_api_works_without_key(client):
+    resp = client.post("/api/v1/chat", json={"query": "x"})
+    assert resp.status_code == 200
+
+
+def test_auth_enabled_rejects_without_key(auth_client):
+    assert auth_client.get("/health").status_code == 200
+    assert auth_client.get("/api/v1/system").json()["auth_required"] is True
+    assert auth_client.get("/api/v1/sessions").status_code == 401
+    assert auth_client.post("/api/v1/chat", json={"query": "x"}).status_code == 401
+
+
+def test_auth_enabled_rejects_wrong_key(auth_client):
+    headers = {"X-API-Key": "wrong-key"}
+    assert auth_client.get("/api/v1/sessions", headers=headers).status_code == 401
+    assert auth_client.post(
+        "/api/v1/chat", json={"query": "x"}, headers=headers
+    ).status_code == 401
+
+
+def test_auth_enabled_accepts_valid_key(auth_client):
+    headers = {"X-API-Key": "test-secret"}
+    resp = auth_client.get("/api/v1/sessions", headers=headers)
+    assert resp.status_code == 200
+    resp = auth_client.post("/api/v1/chat", json={"query": "x"}, headers=headers)
+    assert resp.status_code == 200
+
+
+def test_auth_bearer_header_supported(auth_client):
+    resp = auth_client.get(
+        "/api/v1/sessions", headers={"Authorization": "Bearer test-secret"}
+    )
+    assert resp.status_code == 200
+
+
+def test_auth_enabled_no_token_configured(monkeypatch):
+    """开启鉴权但未配置 token：防御性拒绝一切请求。"""
+    monkeypatch.setenv("AGENT_LLM_PROVIDER", "fake")
+    monkeypatch.setenv("AGENT_AUTH_ENABLED", "true")
+    monkeypatch.delenv("AGENT_AUTH_TOKEN", raising=False)
+    cfg = load_config()
+    service = AgentService.build_from_config(cfg, llm=FakeLLMClient(responder=make_responder()))
+    app = create_app(config=cfg, service=service)
+    c = TestClient(app)
+    assert c.get("/api/v1/sessions").status_code == 401
+    assert c.get("/health").status_code == 200
+
+
+def test_auth_rate_limit(monkeypatch):
+    """限流：同一 Key 每分钟最多 2 次，第 3 次 429。"""
+    monkeypatch.setenv("AGENT_LLM_PROVIDER", "fake")
+    monkeypatch.setenv("AGENT_AUTH_ENABLED", "true")
+    monkeypatch.setenv("AGENT_AUTH_TOKEN", "k")
+    monkeypatch.setenv("AGENT_AUTH_RATE_LIMIT", "2")
+    cfg = load_config()
+    service = AgentService.build_from_config(cfg, llm=FakeLLMClient(responder=make_responder()))
+    app = create_app(config=cfg, service=service)
+    c = TestClient(app)
+    h = {"X-API-Key": "k"}
+    assert c.get("/api/v1/sessions", headers=h).status_code == 200
+    assert c.get("/api/v1/sessions", headers=h).status_code == 200
+    assert c.get("/api/v1/sessions", headers=h).status_code == 429
+    # 不同 Key 不受影响（限流按 Key 隔离）
+    assert c.get("/api/v1/sessions", headers={"X-API-Key": "other"}).status_code == 401

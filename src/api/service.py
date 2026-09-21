@@ -5,9 +5,12 @@ from typing import List, Optional
 
 from src.agent import build_agent
 from src.api.schemas import (
+    BrandingInfo,
     ChatResponse,
     HealthResponse,
+    MessageItem,
     SessionItem,
+    SessionMessagesResponse,
     SystemInfoResponse,
     ToolSchemaOut,
     ToolsResponse,
@@ -25,17 +28,24 @@ from src.utils.config_loader import load_config
 class AgentService:
     """Agent 编排服务的业务门面：供 FastAPI 路由调用。"""
 
-    def __init__(self, config, agent, memory, tool_registry, sessions):
+    def __init__(self, config, agent, memory, tool_registry, sessions, llm=None):
         self.config = config
         self.agent = agent
         self.memory = memory
         self.tool_registry = tool_registry
         self.sessions = sessions
+        self.llm = llm
 
     # ---------------- 组装 ----------------
     @classmethod
-    def build_from_config(cls, config=None, *, llm: Optional[LLMClient] = None) -> "AgentService":
-        """按配置一次性组装全部层（可注入 llm 便于测试/演示）。"""
+    def build_from_config(
+        cls,
+        config=None,
+        *,
+        llm: Optional[LLMClient] = None,
+        usage=None,
+    ) -> "AgentService":
+        """按配置一次性组装全部层（可注入 llm / usage 便于测试/演示）。"""
         cfg = config or load_config()
         tool_cfg = cfg.get("tool", {})
         enabled_tools = tool_cfg.get("enabled")
@@ -43,6 +53,8 @@ class AgentService:
         tool_registry = build_tool_registry(enabled=enabled_tools)
         memory = build_memory(cfg.get("memory"))
         llm = llm or build_llm_client(cfg.get("llm"))
+        if usage is not None and hasattr(llm, "set_usage_sink"):
+            llm.set_usage_sink(usage)
         planner = build_planner(cfg.get("planner"), llm=llm)
         agent = build_agent(
             cfg.get("agent"),
@@ -54,7 +66,7 @@ class AgentService:
             enabled_tools=enabled_tools,
         )
         sessions = SessionManager(memory=memory)
-        return cls(cfg, agent, memory, tool_registry, sessions)
+        return cls(cfg, agent, memory, tool_registry, sessions, llm=llm)
 
     # ---------------- 业务动作 ----------------
     def chat(self, query: str, session_id: Optional[str] = None) -> ChatResponse:
@@ -103,6 +115,16 @@ class AgentService:
             for s in self.sessions.list()
         ]
 
+    def get_session_messages(self, session_id: str) -> SessionMessagesResponse:
+        """读取会话历史消息（来自记忆层，按时间顺序）。"""
+        messages = self.memory.get_messages(session_id)
+        return SessionMessagesResponse(
+            session_id=session_id,
+            messages=[
+                MessageItem(role=m.role, content=m.content) for m in messages
+            ],
+        )
+
     def delete_session(self, session_id: str) -> bool:
         return self.sessions.delete(session_id)
 
@@ -117,6 +139,8 @@ class AgentService:
 
     def system_info(self) -> SystemInfoResponse:
         app_cfg = self.config.get("app", {})
+        auth_cfg = self.config.get("server", {}).get("auth", {})
+        brand_cfg = self.config.get("branding", {}) or {}
         return SystemInfoResponse(
             app=app_cfg.get("name", "agent_framework"),
             version=app_cfg.get("version", "0.0.0"),
@@ -126,4 +150,25 @@ class AgentService:
             agent_provider=self.config.get("agent", {}).get("provider", "react"),
             enabled_tools=list(self.tool_registry.names),
             active_sessions=len(self.sessions),
+            auth_required=_to_bool(auth_cfg.get("enabled", False)),
+            branding=BrandingInfo(
+                app_name=str(brand_cfg.get("app_name") or BrandingInfo().app_name),
+                logo_text=str(brand_cfg.get("logo_text") or BrandingInfo().logo_text),
+                logo_suffix=str(brand_cfg.get("logo_suffix") or BrandingInfo().logo_suffix),
+                agent_label=str(brand_cfg.get("agent_label") or BrandingInfo().agent_label),
+                primary_color=str(brand_cfg.get("primary_color") or BrandingInfo().primary_color),
+                accent_color=str(brand_cfg.get("accent_color") or BrandingInfo().accent_color),
+            ),
         )
+
+
+
+def _to_bool(value: object) -> bool:
+    """布尔规范化：兼容 YAML 占位符默认值返回的字符串。"""
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return value.strip().lower() in ("1", "true", "yes", "on")
+    return bool(value)

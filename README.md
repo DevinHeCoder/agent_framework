@@ -3,6 +3,11 @@
 > 自研轻量化 Agent 调度框架：统一工具注册、参数校验、任务规划、会话记忆。
 > 市面 Agent 大多是一次性脚本——本项目把「工具、规划、记忆、容错」做成可插拔、可复用、可部署的分层框架。
 
+[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB)](https://www.python.org/)
+[![Tests](https://img.shields.io/badge/tests-146%20passed-2ea44f)](https://github.com/DevinHeCoder/agent_framework/actions)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Docker](https://img.shields.io/badge/Docker-compose%20ready-2496ED)](docker-compose.yml)
+
 ## 核心能力
 
 | # | 能力 | 落地形态 |
@@ -87,7 +92,7 @@ agent_framework/
 │   ├── agent/            # ReactAgent + RetryPolicy 容错策略
 │   ├── session/          # 会话管理
 │   └── api/              # FastAPI 应用工厂 / 路由 / service
-├── tests/                # 121 个测试用例（pytest）
+├── tests/                # 146 个测试用例（pytest）
 ├── examples/             # CLI 多轮演示
 ├── docs/architecture.svg # 架构图
 ├── Dockerfile            # 多阶段构建 · 非 root · healthcheck
@@ -95,6 +100,8 @@ agent_framework/
 ```
 
 ## 快速开始
+
+> 完整分步教程见 [docs/QUICKSTART.md](docs/QUICKSTART.md)（5 分钟跑通）。
 
 ```bash
 # 1. 安装依赖
@@ -127,6 +134,32 @@ export AGENT_LLM_BASE_URL=https://api.deepseek.com/v1   # DeepSeek 示例
 export AGENT_LLM_API_KEY=sk-xxx
 export AGENT_LLM_MODEL=deepseek-chat
 python examples/run_agent_demo.py --provider openai_compatible
+```
+
+本地免费方案（Ollama）：`ollama pull qwen2.5:7b`，然后 `AGENT_LLM_BASE_URL=http://localhost:11434/v1`、`AGENT_LLM_MODEL=qwen2.5:7b`、`AGENT_LLM_API_KEY=ollama`。
+
+**真实模型端到端验证**（交付信任证据，6 场景 + 多轮记忆，全部通过退出码 0）：
+
+```bash
+python examples/validate_real_llm.py
+```
+
+### 示例场景库（业务场景示例）
+
+三个自包含业务场景，无 Key 一键运行，一行切换真实 LLM（详见 [examples/scenarios/README.md](examples/scenarios/README.md)）：
+
+```bash
+python examples/scenarios/scenario_qa_knowledge.py   # 知识库问答
+python examples/scenarios/scenario_calc_chain.py     # 连续计算 + 容错
+python examples/scenarios/scenario_multi_tool.py     # 多工具编排
+```
+
+### 性能基线
+
+```bash
+python examples/benchmark.py                                  # fake 基线（框架开销）
+python examples/benchmark.py --provider openai_compatible     # 真实模型基线
+# 报告写入 logs/benchmark_report.md
 ```
 
 ## API 端点
@@ -163,9 +196,20 @@ docker compose up --build
 docker compose ps
 ```
 
+## 文档
+
+| 文档 | 内容 |
+|------|------|
+| [docs/QUICKSTART.md](docs/QUICKSTART.md) | 5 分钟快速开始（安装→测试→演示→真实 LLM→API） |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 分层架构、请求链路、容错与记忆设计 |
+| [docs/API.md](docs/API.md) | API 端点文档与 curl 示例 |
+| [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | 全部配置项与环境变量表 |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Docker 一键部署（app + Redis） |
+| [examples/scenarios/README.md](examples/scenarios/README.md) | 三个业务场景与扩展点 |
+
 ## 测试与验证
 
-- **121 个 pytest 用例全绿**（覆盖注册中心、参数校验、四个工具、双缓存记忆、LLM 客户端、规划解析、Agent 容错链路、会话管理、API 端点）
+- **146 个 pytest 用例全绿**（覆盖注册中心、参数校验、四个工具、双缓存记忆、LLM 客户端、规划解析、Agent 容错链路、会话管理、API 端点）
 - Redis 集成测试：本机有 Redis 服务时自动真实运行，否则自动跳过（无环境 CI 兼容）
 - 演示链路（fake LLM）无需任何外部 Key 即可端到端跑通「拆解 → 调度 → 执行 → 记忆 → 多轮」
 

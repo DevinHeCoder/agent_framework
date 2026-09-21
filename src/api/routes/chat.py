@@ -1,11 +1,16 @@
 """P5 API 层：聊天路由。"""
 from fastapi import APIRouter, Depends
 
+from src.api.auth import verify_api_key
 from src.api.dependencies import get_service
 from src.api.schemas import ChatRequest, ChatResponse
 from src.api.service import AgentService
 
-router = APIRouter(prefix="/api/v1", tags=["chat"])
+router = APIRouter(
+    prefix="/api/v1",
+    tags=["chat"],
+    dependencies=[Depends(verify_api_key)],
+)
 
 
 @router.post("/chat", response_model=ChatResponse)

@@ -32,6 +32,7 @@ class OpenAICompatibleClient(LLMClient):
         timeout: float = 30.0,
         client: Any = None,
     ) -> None:
+        super().__init__()
         self.model = model
         self.temperature = temperature
         if client is not None:
@@ -60,6 +61,14 @@ class OpenAICompatibleClient(LLMClient):
         content = resp.choices[0].message.content
         if content is None:
             raise LLMError("LLM 返回内容为空")
+        # 用量统计：OpenAI 兼容响应带 usage 字段（prompt/completion tokens）
+        usage = getattr(resp, "usage", None)
+        if usage is not None:
+            self._report_usage(
+                self.model,
+                getattr(usage, "prompt_tokens", 0) or 0,
+                getattr(usage, "completion_tokens", 0) or 0,
+            )
         return content
 
     def close(self) -> None:

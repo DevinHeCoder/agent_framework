@@ -56,12 +56,37 @@ class SessionItem(BaseModel):
     message_count: int = 0
 
 
+class MessageItem(BaseModel):
+    """单条会话消息（历史记录）。"""
+
+    role: str
+    content: str
+
+
+class SessionMessagesResponse(BaseModel):
+    """会话历史消息。"""
+
+    session_id: str
+    messages: List[MessageItem] = Field(default_factory=list)
+
+
 # ---------------- system ----------------
 class HealthResponse(BaseModel):
     status: str
     app: str
     version: str
     enabled_tools: List[str]
+
+
+class BrandingInfo(BaseModel):
+    """白标信息：前端控制台品牌元素（由 branding 配置注入）。"""
+
+    app_name: str = "轻量智能 Agent 工具编排框架"
+    logo_text: str = "AGENT"
+    logo_suffix: str = "·控制台"
+    agent_label: str = "AGENT"
+    primary_color: str = "#4F8CFF"
+    accent_color: str = "#22D3EE"
 
 
 class SystemInfoResponse(BaseModel):
@@ -73,3 +98,24 @@ class SystemInfoResponse(BaseModel):
     agent_provider: str
     enabled_tools: List[str]
     active_sessions: int
+    auth_required: bool = False
+    branding: BrandingInfo = Field(default_factory=BrandingInfo)
+
+
+# ---------------- usage ----------------
+class UsageBucket(BaseModel):
+    """单日用量（llm_calls / in_tokens / out_tokens / api_calls）。"""
+
+    date: Optional[str] = None
+    llm_calls: int = 0
+    in_tokens: int = 0
+    out_tokens: int = 0
+    api_calls: int = 0
+
+
+class UsageResponse(BaseModel):
+    """用量监控：今日 / 累计 / 最近 7 天明细。"""
+
+    today: UsageBucket = Field(default_factory=UsageBucket)
+    total: UsageBucket = Field(default_factory=UsageBucket)
+    days: List[UsageBucket] = Field(default_factory=list)

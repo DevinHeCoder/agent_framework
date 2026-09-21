@@ -1,4 +1,6 @@
-"""P0 配置加载单测：YAML 加载、${ENV} 展开、深合并、点路径、环境变量覆盖。"""
+"""P0 配置加载单测：YAML 加载、${ENV} 展开、深合并、点路径、环境变量覆盖、.env 自动加载。"""
+import os
+
 import pytest
 
 from src.common.exceptions import ConfigError
@@ -7,6 +9,7 @@ from src.utils.config_loader import (
     expand_env,
     get_path,
     load_config,
+    load_dotenv,
     load_yaml,
 )
 
@@ -93,3 +96,64 @@ def test_load_config_env_override_bool(tmp_path, monkeypatch):
     monkeypatch.setenv("AGENT_AGENT__MAX_LOOP", "true")
     cfg = load_config(p)
     assert cfg["agent"]["max_loop"] is True
+
+
+# ---------------- load_dotenv 轻量加载 ----------------
+def _write_dotenv(tmp_path, content: str):
+    p = tmp_path / ".env"
+    p.write_text(content, encoding="utf-8")
+    return p
+
+
+def test_load_dotenv_basic(tmp_path, monkeypatch):
+    monkeypatch.delenv("DOT_X", raising=False)
+    monkeypatch.delenv("DOT_Y", raising=False)
+    load_dotenv(_write_dotenv(tmp_path, "DOT_X=hello\nDOT_Y=world\n"))
+    assert os.environ.get("DOT_X") == "hello"
+    assert os.environ.get("DOT_Y") == "world"
+
+
+def test_load_dotenv_quotes_comments_and_garbage(tmp_path, monkeypatch):
+    for k in ("DOT_Q", "DOT_S", "DOT_BAD"):
+        monkeypatch.delenv(k, raising=False)
+    load_dotenv(_write_dotenv(
+        tmp_path,
+        "# 注释行\n\n"
+        'DOT_Q="double quote"\n'
+        "DOT_S='single'\n"
+        "NOT_AN_ASSIGNMENT\n"
+        "123BAD=skip\n"
+        "=no-key\n"
+    ))
+    assert os.environ.get("DOT_Q") == "double quote"
+    assert os.environ.get("DOT_S") == "single"
+    assert os.environ.get("NOT_AN_ASSIGNMENT") is None
+    assert os.environ.get("123BAD") is None
+
+
+def test_load_dotenv_does_not_overwrite_existing(tmp_path, monkeypatch):
+    monkeypatch.setenv("DOT_KEEP", "from_env")
+    load_dotenv(_write_dotenv(tmp_path, "DOT_KEEP=from_dotenv\n"))
+    assert os.environ.get("DOT_KEEP") == "from_env"
+
+
+def test_load_dotenv_missing_file(tmp_path, monkeypatch):
+    load_dotenv(tmp_path / "no_such.env")  # 不应抛异常
+
+
+def test_load_config_reads_dotenv(tmp_path, monkeypatch):
+    monkeypatch.delenv("AGENT_MODEL", raising=False)
+    env_file = _write_dotenv(tmp_path, "AGENT_MODEL=qwen3-max\n")
+    p = tmp_path / "settings.yaml"
+    p.write_text("llm:\n  model: ${AGENT_MODEL:gpt}\n", encoding="utf-8")
+    cfg = load_config(p, dotenv_path=env_file)
+    assert cfg["llm"]["model"] == "qwen3-max"   # ${ENV} 展开命中 .env 值
+
+
+def test_load_config_env_wins_over_dotenv(tmp_path, monkeypatch):
+    monkeypatch.setenv("AGENT_MODEL", "from_real_env")
+    env_file = _write_dotenv(tmp_path, "AGENT_MODEL=qwen3-max\n")
+    p = tmp_path / "settings.yaml"
+    p.write_text("llm:\n  model: ${AGENT_MODEL:gpt}\n", encoding="utf-8")
+    cfg = load_config(p, dotenv_path=env_file)
+    assert cfg["llm"]["model"] == "from_real_env"

@@ -19,6 +19,7 @@ COPY --from=builder /install /usr/local
 # 复制应用代码
 COPY config/ ./config/
 COPY src/ ./src/
+COPY static/ ./static/
 
 # 非 root 运行
 RUN useradd --create-home --shell /usr/sbin/nologin appuser \

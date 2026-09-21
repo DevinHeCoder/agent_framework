@@ -10,6 +10,20 @@ app:
   name: agent_framework
   version: 0.1.0
 
+# 白标化：交付客户时通过 .env 覆盖，前端控制台品牌随之变化
+branding:
+  # 页面标题副名 / 页脚描述
+  app_name: "${AGENT_BRAND_APP_NAME:轻量智能 Agent 工具编排框架}"
+  # 左上角 Logo 主文字（默认 AGENT）
+  logo_text: "${AGENT_BRAND_LOGO_TEXT:AGENT}"
+  # Logo 主文字后的后缀（默认 ·控制台）
+  logo_suffix: "${AGENT_BRAND_LOGO_SUFFIX:·控制台}"
+  # 消息气泡里的助手角色标签
+  agent_label: "${AGENT_BRAND_AGENT_LABEL:AGENT}"
+  # 品牌主色 / 强调色（十六进制，替换控制台配色）
+  primary_color: "${AGENT_BRAND_PRIMARY_COLOR:#4F8CFF}"
+  accent_color: "${AGENT_BRAND_ACCENT_COLOR:#22D3EE}"
+
 # 日志配置路径（相对项目根）
 logging:
   config_path: config/logging.yaml
@@ -60,3 +74,11 @@ agent:
 server:
   host: 0.0.0.0
   port: 8000
+  # API 鉴权（客户环境务必开启，防止公网盗刷 LLM 额度）
+  auth:
+    # 开启后除 /health、/api/v1/system 外的 API 均要求 X-API-Key 请求头
+    enabled: ${AGENT_AUTH_ENABLED:false}
+    # 访问令牌；enabled=true 时必须设置，否则所有请求被拒
+    token: ${AGENT_AUTH_TOKEN:}
+    # 频率限制：同一 Key 每分钟最大请求数（0 = 不限流）
+    rate_limit_per_minute: ${AGENT_AUTH_RATE_LIMIT:60}

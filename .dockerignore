@@ -1,0 +1,23 @@
+# Git / IDE / 缓存
+.git
+.github
+.idea
+.pytest_cache
+__pycache__/
+*.py[cod]
+
+# 密钥与环境（严禁进入镜像）
+.env
+.env.*
+*.bak
+
+# 非运行时目录
+docs
+examples
+logs
+tests
+_deploy
+
+# 文档产物
+*.docx
+~$*
