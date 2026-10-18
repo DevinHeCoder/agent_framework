@@ -169,6 +169,9 @@
   .u-row.dim { border-top: 1px solid var(--border); margin-top: 6px; padding-top: 8px; }
   #usage-chart { display: block; margin-top: 8px; width: 100%; height: 60px; }
   .u-foot { font-size: 10px; color: var(--text-dim); margin-top: 5px; text-align: center; font-family: var(--mono); letter-spacing: 0.5px; }
+  .u-mode-note { font-size: 10px; margin-top: 4px; text-align: center; font-family: var(--mono); letter-spacing: 0.5px; }
+  .u-mode-note.demo { color: var(--warn); }
+  .u-mode-note.real { color: var(--cyan); }
 
   /* chat main */
   .chat { min-width: 0; display: flex; flex-direction: column; }
@@ -292,41 +295,25 @@
     * { animation: none !important; transition: none !important; }
   }
 
-.auth-modal {
-  display: none; position: fixed; inset: 0; z-index: 999;
-  background: rgba(2, 6, 23, 0.86); backdrop-filter: blur(6px);
-  align-items: center; justify-content: center;
-}
-.auth-modal.show { display: flex; }
-.auth-card {
-  width: min(360px, 88vw); padding: 26px 26px 22px;
-  border: 1px solid rgba(34, 211, 238, 0.35); border-radius: 12px;
-  background: linear-gradient(180deg, rgba(10, 20, 40, 0.98), rgba(6, 12, 28, 0.98));
-  box-shadow: 0 0 42px rgba(34, 211, 238, 0.18);
-}
-.auth-title { font-family: var(--mono); font-size: 16px; font-weight: 700; color: #22D3EE; margin-bottom: 8px; letter-spacing: 1px; }
-.auth-msg { font-size: 12px; color: var(--text-dim); margin-bottom: 14px; line-height: 1.6; }
-.auth-card input {
-  width: 100%; box-sizing: border-box; padding: 10px 12px; margin-bottom: 14px;
-  background: rgba(8, 18, 38, 0.9); border: 1px solid rgba(79, 140, 255, 0.4); border-radius: 8px;
-  color: #E5F3FF; font-family: var(--mono); font-size: 13px; outline: none;
-}
-.auth-card input:focus { border-color: #22D3EE; }
-.auth-card button {
-  width: 100%; padding: 10px 0; border: none; border-radius: 8px; cursor: pointer;
-  background: linear-gradient(135deg, #22D3EE, #4F8CFF); color: #03121E;
-  font-family: var(--mono); font-size: 13px; font-weight: 700; letter-spacing: 2px;
-}
-.auth-card button:hover { filter: brightness(1.1); }
-.auth-card .auth-demo {
-  margin-top: 10px;
-  background: transparent; color: var(--text-dim);
-  border: 1px solid var(--border); letter-spacing: 1px; font-weight: 400;
-}
-.auth-card .auth-demo:hover { color: var(--cyan); border-color: var(--border-strong); filter: none; }
-.auth-card .auth-demo-note { font-size: 11px; color: var(--text-dim); margin-top: 8px; line-height: 1.6; text-align: center; }
 .badge.demo { border-color: rgba(251, 191, 36, 0.4); background: rgba(251, 191, 36, 0.08); }
 .badge.demo b { color: var(--warn); }
+.mode-toggle {
+  display: flex; margin-left: 8px;
+  border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+}
+.mode-btn {
+  padding: 5px 12px; cursor: pointer;
+  background: transparent; color: var(--text-dim);
+  border: none; font-family: var(--mono); font-size: 12px; letter-spacing: 1px;
+  transition: all .15s;
+}
+.mode-btn + .mode-btn { border-left: 1px solid var(--border); }
+.mode-btn:hover { color: var(--cyan); }
+.mode-btn.active {
+  background: linear-gradient(135deg, #22D3EE, #4F8CFF);
+  color: #03121E; font-weight: 700;
+}
+
 </style>
 </head>
 <body>
@@ -343,6 +330,10 @@
     </div>
     <div class="badges" id="badges">
       <span class="badge" id="bd-conn">连接中…</span>
+    </div>
+    <div class="mode-toggle" id="mode-toggle" title="演示模式：本地模拟数据，不消耗模型额度；真实模式：连接真实后端与模型">
+      <button class="mode-btn active" data-mode="demo" id="mode-demo">演示</button>
+      <button class="mode-btn" data-mode="real" id="mode-real">真实</button>
     </div>
   </header>
 
@@ -370,6 +361,7 @@
           <div class="u-row"><span>输入 tokens</span><b id="u-in">--</b></div>
           <div class="u-row"><span>输出 tokens</span><b id="u-out">--</b></div>
           <div class="u-row dim"><span>累计消耗</span><b id="u-total">--</b></div>
+          <div class="u-mode-note" id="u-mode-note">--</div>
           <svg id="usage-chart" viewBox="0 0 228 60" preserveAspectRatio="none" aria-label="近7天LLM调用"></svg>
           <div class="u-foot">近 7 天 LLM 调用次数</div>
         </div>
@@ -404,17 +396,6 @@
   </footer>
 </div>
 
-<div id="auth-modal" class="auth-modal">
-  <div class="auth-card">
-    <div class="auth-title">访问验证</div>
-    <div id="auth-msg" class="auth-msg">请输入 API 访问令牌</div>
-    <input id="auth-input" type="password" placeholder="API Key / Token" autocomplete="off">
-    <button id="auth-submit">进入控制台</button>
-    <button id="auth-demo" class="auth-demo">以演示模式进入</button>
-    <div class="auth-demo-note">不输入令牌进入演示模式：界面功能完整可试用，AI 回复为本地模拟数据，不消耗真实模型额度</div>
-  </div>
-</div>
-
 <script>
 (function () {
   'use strict';
@@ -426,7 +407,7 @@
     busy: false,
     info: null,
     brand: null,
-    demo: false
+    demo: true
   };
 
   var $ = function (id) { return document.getElementById(id); };
@@ -467,6 +448,18 @@
     cur.message_count = (cur.history ? cur.history.length : 0) / 2 + (cur.history.length % 2);
     renderSessions();
   }
+  function renderModeNote() {
+    var n = $('u-mode-note');
+    if (!n) return;
+    if (state.demo) {
+      n.textContent = '演示模式 · 不消耗真实模型额度';
+      n.className = 'u-mode-note demo';
+    } else {
+      n.textContent = '真实模式 · 消耗模型额度，LLM 用量实时统计';
+      n.className = 'u-mode-note real';
+    }
+  }
+
   function renderDemoUsage() {
     $('u-llm').textContent = '0';
     $('u-in').textContent = '0';
@@ -474,7 +467,8 @@
     $('u-total').textContent = '0 次 / 0 tok';
     renderUsageChart([]);
     var foot = document.querySelector('.u-foot');
-    if (foot) foot.textContent = '演示模式 · 不消耗真实模型额度';
+    if (foot) foot.textContent = '近 7 天 LLM 调用次数';
+    renderModeNote();
   }
 
   /* ===== 白标品牌 ===== */
@@ -525,23 +519,19 @@
     }
   }
 
-  /* ===== API 鉴权 ===== */
-  var AUTH_KEY = 'agent_api_key';
-  function getToken() { return localStorage.getItem(AUTH_KEY) || ''; }
-  function setToken(t) { localStorage.setItem(AUTH_KEY, t); }
-
+  /* ===== 演示模式入口（无需令牌，随时可切换） ===== */
   function apiFetch(path, opts) {
     opts = opts || {};
     opts.headers = opts.headers || {};
-    var tk = getToken();
-    if (tk) opts.headers['X-API-Key'] = tk;
     if (opts.method && opts.method !== 'GET' && !opts.headers['Content-Type']) {
       opts.headers['Content-Type'] = 'application/json';
     }
     return fetch(path, opts).then(function (r) {
       if (r.status === 401) {
-        showAuthModal('访问令牌无效或已过期，请重新输入');
-        throw new Error('访问令牌验证失败');
+        var toast = $('err-toast');
+        toast.textContent = '服务端鉴权未关闭：请将 AGENT_AUTH_ENABLED 设为 false 后重启服务';
+        toast.style.display = 'block';
+        throw new Error('鉴权未关闭');
       }
       if (r.status === 429) {
         var toast = $('err-toast');
@@ -553,26 +543,9 @@
     });
   }
 
-  function showAuthModal(msg) {
-    var m = $('auth-modal');
-    m.classList.add('show');
-    if (msg) $('auth-msg').textContent = msg;
-    var inp = $('auth-input');
-    if (!inp.value) inp.value = getToken();
-    inp.focus();
-  }
-
-  function submitAuth() {
-    var t = $('auth-input').value.trim();
-    if (!t) { $('auth-msg').textContent = '请输入访问令牌'; return; }
-    setToken(t);
-    $('auth-modal').classList.remove('show');
-    init();
-  }
-
-  function demoEnter() {
-    state.demo = true;
-    $('auth-modal').classList.remove('show');
+  function setMode(m) {
+    state.demo = (m === 'demo');
+    state.sessionId = null;
     init();
   }
 
@@ -591,6 +564,18 @@
   };
 
   function init() {
+    /* 切换模式：同步 toggle 高亮、清空对话流、移除动态徽章（保留连接状态徽章） */
+    var db = $('mode-demo'), rb = $('mode-real');
+    if (db) db.classList.toggle('active', state.demo);
+    if (rb) rb.classList.toggle('active', !state.demo);
+    var flowEl = $('flow');
+    if (flowEl) flowEl.innerHTML = '';
+    var badgesEl = $('badges');
+    if (badgesEl) {
+      [].slice.call(badgesEl.children).forEach(function (c) {
+        if (c.id !== 'bd-conn') c.remove();
+      });
+    }
     var sysReq = state.demo
       ? Promise.resolve(DEMO_SYS)
       : fetch('/api/v1/system').then(function (r) { return r.json(); });
@@ -614,10 +599,6 @@
         $('st-memory').textContent = '记忆: 演示';
         $('st-planner').textContent = '规划: 演示';
         bootMsg(d);
-        return;
-      }
-      if (d.auth_required && !getToken()) {
-        showAuthModal('该服务已开启访问鉴权，请输入 API 访问令牌');
         return;
       }
       bootMsg(d);
@@ -692,7 +673,10 @@
       $('u-out').textContent = fmtTokens(t.out_tokens);
       $('u-total').textContent = (tt.llm_calls || 0) + ' 次 / ' + fmtTokens((tt.in_tokens || 0) + (tt.out_tokens || 0)) + ' tok';
       renderUsageChart(d.days || []);
-    }).catch(function () {});
+      renderModeNote();
+    }).catch(function () {
+      renderModeNote();
+    });
   }
 
   function bootMsg(d) {
@@ -893,14 +877,56 @@
   }
 
   /* ===== 发送 ===== */
+  /* 安全表达式求值：递归下降解析器（不使用 eval/Function，兼容严格 CSP） */
   function mockEval(expr) {
     expr = (expr || '').replace(/\s+/g, '');
     if (/^\d+\*\*\d+$/.test(expr)) {
       var p = expr.split('**');
       return String(Math.pow(+p[0], +p[1]));
     }
-    if (!/^[\d+\-*/().]+$/.test(expr)) return '?';
-    try { return String(Function('"use strict";return (' + expr + ')')()); } catch (e) { return '?'; }
+    if (!/^[\d+\-*/().^]+$/.test(expr)) return '?';
+    try {
+      var tokens = expr.match(/\d+\.?\d*|[()+\-*/\^]/g) || [];
+      var pos = 0;
+      function parseAdd() {
+        var v = parseMul();
+        while (pos < tokens.length && (tokens[pos] === '+' || tokens[pos] === '-')) {
+          var op = tokens[pos++];
+          var r = parseMul();
+          v = op === '+' ? v + r : v - r;
+        }
+        return v;
+      }
+      function parseMul() {
+        var v = parsePow();
+        while (pos < tokens.length && (tokens[pos] === '*' || tokens[pos] === '/')) {
+          var op = tokens[pos++];
+          var r = parsePow();
+          v = op === '*' ? v * r : v / r;
+        }
+        return v;
+      }
+      function parsePow() {
+        var v = parseAtom();
+        if (pos < tokens.length && tokens[pos] === '^') {
+          pos++;
+          return Math.pow(v, parsePow()); /* 右结合 */
+        }
+        return v;
+      }
+      function parseAtom() {
+        if (pos < tokens.length && tokens[pos] === '(') {
+          pos++;
+          var v = parseAdd();
+          if (pos < tokens.length && tokens[pos] === ')') pos++;
+          return v;
+        }
+        if (pos < tokens.length && tokens[pos] === '-') { pos++; return -parseAtom(); }
+        return parseFloat(tokens[pos++]);
+      }
+      var val = parseAdd();
+      return (Number.isFinite(val) && Math.abs(val) < 1e15) ? String(val) : '?';
+    } catch (e) { return '?'; }
   }
 
   function mockReply(q) {
@@ -1044,11 +1070,10 @@
     this.style.height = Math.min(this.scrollHeight, 140) + 'px';
   });
 
-  $('auth-submit').addEventListener('click', function () { submitAuth(); });
-  $('auth-demo').addEventListener('click', function () { demoEnter(); });
-  $('auth-input').addEventListener('keydown', function (e) {
-    if (e.key === 'Enter') { e.preventDefault(); submitAuth(); }
-  });
+  var md = $('mode-demo');
+  if (md) md.addEventListener('click', function () { setMode('demo'); });
+  var mr = $('mode-real');
+  if (mr) mr.addEventListener('click', function () { setMode('real'); });
 
   init();
 })();
