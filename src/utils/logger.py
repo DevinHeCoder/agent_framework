@@ -9,19 +9,81 @@
 """
 from __future__ import annotations
 
+import contextvars
+import json
 import logging
 import logging.config
+import time
 from pathlib import Path
-from typing import Optional, Union
+from typing import Any, Dict, Optional, Union
 
 import yaml
 
 from src.common.constants import DEFAULT_LOGGING_CONFIG_PATH
 from src.common.exceptions import ConfigError
+from src.common.security import redact_secrets
 
 PathLike = Union[str, Path]
 
 _configured = False
+
+# 请求级上下文：由 API 中间件设置，日志 filter 注入到每条 record（全链路可串）
+request_id_var: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "request_id", default="-"
+)
+
+
+class RedactingFormatter(logging.Formatter):
+    """日志脱敏格式化器：格式化完成后对全文打码（sk-*、Bearer token 等）。
+
+    在 config/logging.yaml 中通过 ``(): src.utils.logger.RedactingFormatter``
+    工厂方式启用；dictConfig 会把 ``format`` / ``datefmt`` 键映射为构造参数。
+    """
+
+    def format(self, record: logging.LogRecord) -> str:
+        msg = super().format(record)
+        return redact_secrets(msg)
+
+
+class ContextFilter(logging.Filter):
+    """把请求上下文（request_id）注入 LogRecord，供 formatter 的 %(request_id)s 使用。"""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.request_id = request_id_var.get()
+        return True
+
+
+class JsonFormatter(logging.Formatter):
+    """结构化 JSON 日志（一行一条）：time/level/module/msg/request_id 等。
+
+    用于 logs/app.jsonl；仅记录 log 方法显式传入的关键字字段与 record 基础字段。
+    """
+
+    def format(self, record: logging.LogRecord) -> str:
+        payload: Dict[str, Any] = {
+            "time": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(record.created)),
+            "level": record.levelname,
+            "module": record.name,
+            "msg": record.getMessage(),
+            "request_id": getattr(record, "request_id", "-"),
+        }
+        # 结构化字段：logger.info("...", extra={...}) 之外的显式 key=value 由
+        # caller 通过 record.__dict__ 传入（如 step_id/session_id 等），统一带上
+        for key in (
+            "session_id",
+            "step_id",
+            "action",
+            "status",
+            "duration_ms",
+            "retry_count",
+            "args_summary",
+        ):
+            if hasattr(record, key):
+                payload[key] = getattr(record, key)
+        if record.exc_info and record.exc_info[0] is not None:
+            payload["exception"] = self.formatException(record.exc_info)
+        text = json.dumps(payload, ensure_ascii=False)
+        return redact_secrets(text)
 
 
 def setup_logging(

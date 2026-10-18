@@ -177,3 +177,38 @@ def test_llm_registry_typed():
 
     assert set(llm_registry.names) == {"fake", "openai_compatible"}
     assert issubclass(llm_registry.get("fake"), LLMClient)
+
+
+# ---------------- 配置布尔归一化（env 展开的 "false" 不能当 True） ----------------
+def test_build_llm_client_bool_string_coerced():
+    # settings.yaml 里 use_proxy: ${AGENT_LLM_USE_PROXY:false} 展开为字符串 "false"，
+    # 若直接传给构造函数，非空字符串为真值 → 会走代理。必须归一化为 bool。
+    llm = build_llm_client(
+        {
+            "provider": "openai_compatible",
+            "options": {
+                "api_key": "test-key",
+                "base_url": "https://example.com/v1",
+                "use_proxy": "false",
+            },
+        }
+    )
+    assert isinstance(llm, OpenAICompatibleClient)
+    # openai 内部 httpx client：直连模式 trust_env 应为 False
+    assert llm._client._client._trust_env is False
+    llm.close()
+
+
+def test_build_llm_client_bool_string_true():
+    llm = build_llm_client(
+        {
+            "provider": "openai_compatible",
+            "options": {
+                "api_key": "test-key",
+                "base_url": "https://example.com/v1",
+                "use_proxy": "true",
+            },
+        }
+    )
+    assert llm._client._client._trust_env is True
+    llm.close()

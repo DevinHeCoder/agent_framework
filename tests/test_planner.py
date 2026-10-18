@@ -18,7 +18,7 @@ def test_plan_parses_valid_steps():
         '{"steps": [{"action": "calc", "args": {"expression": "(3+5)*2"}, "thought": "先计算"},'
         '{"action": "respond", "args": {}, "thought": "总结"}]}'
     ])
-    plan = p.plan("帮我算 (3+5)*2")
+    plan = p.plan("帮我算 (3+5)*2 的值")
     assert isinstance(plan, Plan)
     assert len(plan.steps) == 2
     s1, s2 = plan.steps

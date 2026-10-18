@@ -137,6 +137,40 @@ class AgentService:
             enabled_tools=list(self.tool_registry.names),
         )
 
+    def readiness(self) -> dict:
+        """就绪探针：逐个检查依赖，任一失败返回 not_ready（禁止探针自身抛 500）。"""
+        checks: dict = {}
+        ok = True
+
+        # 配置已加载（能走到这里即已加载）
+        checks["config"] = {"ok": True}
+
+        # Redis：仅当选型为 redis / hybrid 时必查
+        mem_cfg = self.config.get("memory", {}) or {}
+        mem_provider = str(mem_cfg.get("provider", "in_memory")).lower()
+        if mem_provider in ("redis", "hybrid"):
+            checks["redis"] = self._check_redis()
+            ok &= bool(checks["redis"]["ok"])
+        else:
+            checks["redis"] = {"ok": True, "note": "not_used"}
+
+        # LLM client 已初始化（fake 演示模式同样视为就绪）
+        checks["llm"] = {"ok": self.llm is not None}
+        ok &= bool(checks["llm"]["ok"])
+
+        return {"status": "ready" if ok else "not_ready", "checks": checks}
+
+    def _check_redis(self) -> dict:
+        """内存/Redis 记忆的连通性检查。"""
+        try:
+            client = getattr(self.memory, "_client", None)
+            if client is None:
+                return {"ok": False, "error": "memory provider 未初始化 redis 客户端"}
+            client.ping()
+            return {"ok": True}
+        except Exception as e:  # noqa: BLE001 - 探针禁止抛错
+            return {"ok": False, "error": str(e)}
+
     def system_info(self) -> SystemInfoResponse:
         app_cfg = self.config.get("app", {})
         auth_cfg = self.config.get("server", {}).get("auth", {})

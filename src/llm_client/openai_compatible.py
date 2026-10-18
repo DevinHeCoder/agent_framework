@@ -1,12 +1,15 @@
 """OpenAI 兼容协议客户端：适配任意兼容端点（OpenAI / DeepSeek / 通义 / 豆包等）。
 
 配置字段（settings.yaml 的 llm.options）:
-    api_key / base_url / model / temperature / timeout
+    api_key / base_url / model / temperature / timeout / use_proxy
 
 设计说明:
 - 对 openai 库做惰性导入，未安装时明确报错（不污染其他 provider）；
 - 支持注入 client（便于测试复用连接 / 走自定义 transport）。
+- 性能：默认直连（trust_env=False），避免系统代理劫持 LLM 调用导致延迟
+  （实测经代理 4~6s，直连 2.5~3s）；需要走代理时设置 use_proxy=true。
 """
+import httpx
 from typing import Any, List, Optional
 
 from src.common.exceptions import LLMError
@@ -30,6 +33,7 @@ class OpenAICompatibleClient(LLMClient):
         model: str = "gpt-4o-mini",
         temperature: float = 0.0,
         timeout: float = 30.0,
+        use_proxy: bool = False,
         client: Any = None,
     ) -> None:
         super().__init__()
@@ -40,16 +44,21 @@ class OpenAICompatibleClient(LLMClient):
         else:
             if _OpenAI is None:
                 raise LLMError("未安装 openai 库（pip install openai），无法使用 openai_compatible provider")
-            self._client = _OpenAI(
-                api_key=api_key,
-                base_url=base_url or None,
-                timeout=timeout,
-            )
+            kwargs: dict = {
+                "api_key": api_key,
+                "base_url": base_url or None,
+                "timeout": timeout,
+            }
+            if not use_proxy:
+                # 直连：不走系统代理（默认），显著降低 LLM 调用延迟
+                kwargs["http_client"] = httpx.Client(trust_env=False, timeout=timeout)
+            self._client = _OpenAI(**kwargs)
 
     def chat(self, messages: List[ChatMessage], **kwargs) -> str:
         payload = [{"role": m.role, "content": m.content} for m in messages]
+        # model 可为 None（如规划器未指定快模型时）→ 回退到实例默认模型
         params = {
-            "model": kwargs.pop("model", self.model),
+            "model": kwargs.pop("model", None) or self.model,
             "messages": payload,
             "temperature": kwargs.pop("temperature", self.temperature),
             **kwargs,

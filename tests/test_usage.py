@@ -71,7 +71,7 @@ def test_usage_endpoint_shape(client):
 
 def test_usage_reflects_chat_calls(client):
     # 一次真实链路调用：fake LLM 每次 chat 都会上报 token
-    client.post("/api/v1/chat", json={"query": "帮我算 (3+5)*2"})
+    client.post("/api/v1/chat", json={"query": "帮我算 (3+5)*2 的值"})
     d = client.get("/api/v1/usage").json()
     assert d["today"]["llm_calls"] >= 1  # 至少一次规划器调用
 

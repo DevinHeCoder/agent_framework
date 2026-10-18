@@ -9,6 +9,8 @@
 app:
   name: agent_framework
   version: 0.1.0
+  # 运行环境：development | production（production 下空/占位密钥将拒绝启动，防止裸奔）
+  env: ${AGENT_APP_ENV:development}
 
 # 白标化：交付客户时通过 .env 覆盖，前端控制台品牌随之变化
 branding:
@@ -58,17 +60,23 @@ llm:
   model: ${AGENT_LLM_MODEL:}
   temperature: 0.2
   max_tokens: 1024
+  # 性能优化：默认直连（false），避免系统代理劫持 LLM 调用造成延迟；需走代理设 true
+  use_proxy: ${AGENT_LLM_USE_PROXY:false}
 
 # ---------------- P4 规划层（任务拆解 / 多步规划）----------------
 planner:
   provider: llm              # llm | none（不拆解直接执行）
   max_steps: 6               # 单次任务最大规划步数
+  # 性能优化：规划专用快模型（如 qwen3.8-flash），空=与 llm.model 相同
+  plan_model: ${AGENT_LLM_PLAN_MODEL:}
 
 # ---------------- P4 Agent 核心层 ----------------
 agent:
   provider: react            # react（ReAct 循环）
   max_loop: 5                # 最大工具调用轮次，防止死循环
   json_parse_retries: 2      # LLM 输出 JSON 解析失败的最大重试轮次
+  # 性能优化：单工具且工具结果确定时直接组答案，跳过第二次 LLM 调用（true/false）
+  direct_answer: true
 
 # ---------------- P5 服务 ----------------
 server:
@@ -82,3 +90,17 @@ server:
     token: ${AGENT_AUTH_TOKEN:}
     # 频率限制：同一 Key 每分钟最大请求数（0 = 不限流）
     rate_limit_per_minute: ${AGENT_AUTH_RATE_LIMIT:60}
+  # P0-1 可观测性
+  monitoring:
+    # 控制台日志是否输出 JSON（true 时 console 也切 JSON；默认 JSON 走 logs/app.jsonl）
+    log_json: ${AGENT_LOG_JSON:false}
+    # Sentry DSN：为空则完全不初始化（客户私有化环境可留空）
+    sentry_dsn: ${AGENT_SENTRY_DSN:}
+  # P0-4 安全加固
+  security:
+    # CORS 白名单（逗号分隔）；默认空=仅同源，禁止使用 *
+    cors_origins: ${AGENT_SECURITY_CORS_ORIGINS:}
+    # SSRF 追加黑名单主机（逗号分隔）
+    blocked_hosts: ${AGENT_SECURITY_BLOCKED_HOSTS:}
+    # 请求体大小上限（MB），超限返回 413
+    max_body_mb: ${AGENT_SECURITY_MAX_BODY_MB:1}

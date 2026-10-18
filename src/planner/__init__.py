@@ -48,4 +48,6 @@ def build_planner(
         llm=llm,
         max_steps=cfg.get("max_steps", 6),
         parse_retries=cfg.get("parse_retries", 2),
+        # 性能优化：规划模型可独立于主模型（如用 flash 规划、max 回答）
+        plan_model=cfg.get("plan_model"),
     )

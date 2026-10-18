@@ -53,7 +53,9 @@ def test_chat_endpoint_ok(client):
     assert resp.status_code == 200
     body = resp.json()
     assert body["session_id"].startswith("sess_")
-    assert body["answer"] == "结果是 16"
+    # 直答捷径：单工具确定性结果，跳过第二次 LLM 调用
+    assert body["answer"].startswith("计算结果")
+    assert "16" in body["answer"]
     assert body["success"] is True
     assert len(body["trace"]) == 2
     assert body["trace"][0]["action"] == "calc"

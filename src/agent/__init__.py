@@ -73,5 +73,6 @@ def build_agent(
         policy=policy,
         max_loop=cfg.get("max_loop", 5),
         json_parse_retries=cfg.get("json_parse_retries", 2),
+        direct_answer=cfg.get("direct_answer", True),
         enabled_tools=enabled_tools,
     )

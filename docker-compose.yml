@@ -23,6 +23,8 @@ services:
       AGENT_LLM_API_KEY: ${AGENT_LLM_API_KEY:-}
       AGENT_LLM_BASE_URL: ${AGENT_LLM_BASE_URL:-}
       AGENT_LLM_MODEL: ${AGENT_LLM_MODEL:-}
+      AGENT_LLM_PLAN_MODEL: ${AGENT_LLM_PLAN_MODEL:-}
+      AGENT_LLM_USE_PROXY: ${AGENT_LLM_USE_PROXY:-false}
       AGENT_AUTH_ENABLED: ${AGENT_AUTH_ENABLED:-false}
       AGENT_AUTH_TOKEN: ${AGENT_AUTH_TOKEN:-}
       AGENT_AUTH_RATE_LIMIT: ${AGENT_AUTH_RATE_LIMIT:-60}
@@ -35,6 +37,9 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    # P0-5 资源上限：防单客户打满整机（可按客户规格调整）
+    mem_limit: 1g
+    cpus: 1.0
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).status==200 else 1)"]
       interval: 30s
@@ -51,6 +56,8 @@ services:
     container_name: agent-redis
     ports:
       - "6380:6379"
+    # P0-2 持久化：AOF 开启（everysec 平衡性能与数据安全），volume 已挂 /data
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
     volumes:
       - redis-data:/data
     environment:

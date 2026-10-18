@@ -19,6 +19,7 @@ htmlcov/
 logs/
 *.log
 .preview/
+backup/
 
 # ---- 部署脚本与部署包（含服务器密钥，禁止入库）----
 _deploy/
@@ -44,3 +45,6 @@ Thumbs.db
 _shots/
 面试备战手册.docx
 AI辅助开发经验·面试话术.docx
+
+# ---- 压测产物 ----
+examples/load_report_*.json

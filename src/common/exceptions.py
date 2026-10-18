@@ -66,3 +66,8 @@ class RetryExhaustedError(AgentError):
 # --- 会话层（P5）---
 class SessionError(AgentFrameworkError):
     """会话管理失败（会话不存在、持久化失败等）。"""
+
+
+# --- 安全层（P0-4）---
+class SecurityError(AgentFrameworkError):
+    """安全校验失败（SSRF 拦截、CORS 拒绝、请求超限等）。"""

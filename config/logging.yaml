@@ -3,32 +3,54 @@
 version: 1
 disable_existing_loggers: false
 
+filters:
+  # 注入请求上下文（request_id），供 %(request_id)s 使用（全链路可串）
+  context:
+    (): src.utils.logger.ContextFilter
+
 formatters:
   standard:
-    format: "%(asctime)s | %(levelname)-7s | %(name)s | %(message)s"
+    # 脱敏格式化器：输出前对 sk-* / Bearer token / key= 值打码，防止密钥落盘
+    (): src.utils.logger.RedactingFormatter
+    format: "%(asctime)s | %(levelname)-7s | %(request_id)s | %(name)s | %(message)s"
     datefmt: "%Y-%m-%d %H:%M:%S"
+  json:
+    # 结构化 JSON 日志（一行一条，用于机器采集 / 按 request_id 检索）
+    (): src.utils.logger.JsonFormatter
 
 handlers:
   console:
     class: logging.StreamHandler
     level: DEBUG
     formatter: standard
+    filters: [context]
     stream: ext://sys.stdout
   file:
     class: logging.handlers.RotatingFileHandler
     level: INFO
     formatter: standard
+    filters: [context]
     filename: logs/agent_framework.log
     maxBytes: 5242880     # 单文件 5MB
     backupCount: 3        # 保留 3 个滚动备份
     encoding: utf-8
+  jsonl:
+    # 结构化日志文件：pytest/运维可按 request_id 检索一次请求全链路
+    class: logging.handlers.RotatingFileHandler
+    level: INFO
+    formatter: json
+    filters: [context]
+    filename: logs/app.jsonl
+    maxBytes: 10485760    # 单文件 10MB
+    backupCount: 2
+    encoding: utf-8
 
 root:
   level: INFO
-  handlers: [console, file]
+  handlers: [console, file, jsonl]
 
 loggers:
   agent_framework:
     level: DEBUG
-    handlers: [console, file]
+    handlers: [console, file, jsonl]
     propagate: false

@@ -44,6 +44,7 @@ def make_agent(
     param_fix_attempts=0,
     parse_retries=2,
     max_loop=5,
+    direct_answer=True,
 ):
     reg = build_tool_registry()
     llm = FakeLLMClient(responder=make_responder(plan_jsons, fixer=fixer, answer=answer))
@@ -56,28 +57,34 @@ def make_agent(
     )
     agent = ReactAgent(
         llm=llm, planner=planner, memory=mem, tool_registry=reg,
-        policy=policy, max_loop=max_loop,
+        policy=policy, max_loop=max_loop, direct_answer=direct_answer,
     )
     return agent, llm, mem
 
 
 # ---------------- 端到端：工具调度 ----------------
 def test_agent_runs_tool_and_answers():
+    # 直答捷径：单工具（calc）成功 → 跳过第二次 LLM，直接组答案
     agent, llm, mem = make_agent(plan_jsons=[PLAN_CALC], answer="结果是 16")
     result = agent.run("帮我算 (3+5)*2", session_id="s1")
     assert isinstance(result, AgentResult)
     assert result.success is True
-    assert result.answer == "结果是 16"
+    assert result.answer == "计算结果：(3+5)*2 = 16"
     assert result.steps_taken == 2
     assert result.trace[0].status == "success"
     assert result.trace[0].action == "calc"
     assert "16" in result.trace[0].observation
+    # 规则直配生效：规划与回答都不调 LLM（零调用）
+    assert len(llm.calls) == 0
     # 记忆已写入（user + assistant）
     assert [m.role for m in mem.get_messages("s1")] == ["user", "assistant"]
 
 
 def test_agent_writes_multi_turn_memory():
-    agent, llm, mem = make_agent(plan_jsons=[PLAN_CALC, PLAN_CALC], answer="16")
+    # direct_answer=False：走完整 LLM 回答路径，验证历史上下文被带入
+    agent, llm, mem = make_agent(
+        plan_jsons=[PLAN_CALC, PLAN_CALC], answer="16", direct_answer=False
+    )
     agent.run("第一问", session_id="m")
     agent.run("第二问", session_id="m")
     msgs = mem.get_messages("m")
@@ -98,7 +105,7 @@ def test_agent_self_heals_params():
         answer="杭州今天小雨",
         param_fix_attempts=2,
     )
-    result = agent.run("杭州天气怎么样", session_id="s2")
+    result = agent.run("帮我看看杭州现在的天气情况", session_id="s2")
     assert result.success is True
     assert result.trace[0].status == "success"
     assert "杭州" in result.trace[0].observation
@@ -116,7 +123,7 @@ def test_agent_self_heal_fails_then_fallback():
         answer="兜底后仍回答",
         param_fix_attempts=1,
     )
-    result = agent.run("杭州天气怎么样", session_id="s3")
+    result = agent.run("帮我看看杭州现在的天气情况", session_id="s3")
     assert result.trace[0].status == "failed"
     assert result.success is False
     assert result.answer  # 有兜底/综合回答，不抛异常

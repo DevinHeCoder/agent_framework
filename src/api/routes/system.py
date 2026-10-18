@@ -2,6 +2,7 @@
 from typing import List
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import JSONResponse
 
 from src.api.auth import verify_api_key
 from src.api.dependencies import get_service
@@ -18,8 +19,22 @@ router = APIRouter(tags=["system"])
 
 @router.get("/health", response_model=HealthResponse)
 async def health(service: AgentService = Depends(get_service)) -> HealthResponse:
-    """健康检查。"""
+    """健康检查（业务信息：版本 / 启用的工具）。"""
     return service.health()
+
+
+@router.get("/healthz")
+async def healthz() -> dict:
+    """存活探针：进程活着即 200，不依赖任何外部组件（供负载均衡 / k8s liveness）。"""
+    return {"status": "ok"}
+
+
+@router.get("/readyz")
+async def readyz(service: AgentService = Depends(get_service)):
+    """就绪探针：依次检查 Redis / LLM client；任一失败返回 503 并列出失败项。"""
+    result = service.readiness()
+    status_code = 200 if result["status"] == "ready" else 503
+    return JSONResponse(content=result, status_code=status_code)
 
 
 @router.get("/api/v1/system", response_model=SystemInfoResponse)

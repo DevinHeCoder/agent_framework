@@ -1,11 +1,14 @@
-# 运行时依赖
-fastapi>=0.110
-uvicorn>=0.29
-pydantic>=2.7
-pyyaml>=6.0
-redis>=5.0
-openai>=1.30
-httpx>=0.27
+# 运行时依赖（精确锁定，P0-4 安全基线：避免上游意外变更）
+fastapi==0.141.1
+uvicorn==0.53.0
+pydantic==2.13.4
+pyyaml==6.0.3
+redis==8.1.0
+openai==2.52.0
+httpx==0.28.1
 
 # 开发/测试依赖
-pytest>=8.0
+pytest==9.1.1
+
+# 可选可观测性（P0-1 Sentry，不安装不影响运行）
+# sentry-sdk>=2.0

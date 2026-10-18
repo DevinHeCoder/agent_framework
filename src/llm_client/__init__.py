@@ -52,8 +52,23 @@ def build_llm_client(config: Optional[dict] = None) -> LLMClient:
     return llm_registry.create(provider, **options)
 
 
+_BOOL_STR_MAP = {
+    "true": True, "1": True, "yes": True, "on": True,
+    "false": False, "0": False, "no": False, "off": False, "": False,
+}
+
+
+def _coerce_bool(value):
+    """env 展开的布尔字段是字符串（如 "false"），非空字符串在 Python 中为真值，
+    会导致 use_proxy="false" 被当作 True 走代理。统一归一化为 bool。"""
+    if isinstance(value, str) and value.strip().lower() in _BOOL_STR_MAP:
+        return _BOOL_STR_MAP[value.strip().lower()]
+    return value
+
+
 def _filter_ctor_kwargs(ctor, kwargs: dict) -> dict:
-    """按构造函数签名过滤 kwargs：只保留被接受且非空(None/'')的参数。"""
+    """按构造函数签名过滤 kwargs：只保留被接受且非空(None/'')的参数，
+    并将布尔字符串（"true"/"false"）归一化为 bool。"""
     import inspect
 
     sig = inspect.signature(ctor)
@@ -61,12 +76,14 @@ def _filter_ctor_kwargs(ctor, kwargs: dict) -> dict:
         p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
     )
     if accepts_kwargs:
-        return {k: v for k, v in kwargs.items() if v not in (None, "")}
+        return {k: _coerce_bool(v) for k, v in kwargs.items() if v not in (None, "")}
     accepted = {
         name
         for name, p in sig.parameters.items()
         if p.kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
     }
     return {
-        k: v for k, v in kwargs.items() if k in accepted and v not in (None, "")
+        k: _coerce_bool(v)
+        for k, v in kwargs.items()
+        if k in accepted and v not in (None, "")
     }

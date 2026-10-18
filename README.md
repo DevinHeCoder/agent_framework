@@ -4,7 +4,7 @@
 > 市面 Agent 大多是一次性脚本——本项目把「工具、规划、记忆、容错」做成可插拔、可复用、可部署的分层框架。
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB)](https://www.python.org/)
-[![Tests](https://img.shields.io/badge/tests-146%20passed-2ea44f)](https://github.com/DevinHeCoder/agent_framework/actions)
+[![Tests](https://img.shields.io/badge/tests-205%20passed-2ea44f)](https://github.com/DevinHeCoder/agent_framework/actions)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Docker](https://img.shields.io/badge/Docker-compose%20ready-2496ED)](docker-compose.yml)
 
@@ -92,7 +92,7 @@ agent_framework/
 │   ├── agent/            # ReactAgent + RetryPolicy 容错策略
 │   ├── session/          # 会话管理
 │   └── api/              # FastAPI 应用工厂 / 路由 / service
-├── tests/                # 146 个测试用例（pytest）
+├── tests/                # 205 个测试用例（pytest）
 ├── examples/             # CLI 多轮演示
 ├── docs/architecture.svg # 架构图
 ├── Dockerfile            # 多阶段构建 · 非 root · healthcheck
@@ -217,7 +217,7 @@ docker compose ps
 
 ## 测试与验证
 
-- **146 个 pytest 用例全绿**（覆盖注册中心、参数校验、四个工具、双缓存记忆、LLM 客户端、规划解析、Agent 容错链路、会话管理、API 端点）
+- **205 个 pytest 用例全绿**（覆盖注册中心、参数校验、四个工具、双缓存记忆、LLM 客户端、规划解析、Agent 容错链路、会话管理、API 端点）
 - Redis 集成测试：本机有 Redis 服务时自动真实运行，否则自动跳过（无环境 CI 兼容）
 - 演示链路（fake LLM）无需任何外部 Key 即可端到端跑通「拆解 → 调度 → 执行 → 记忆 → 多轮」
 
